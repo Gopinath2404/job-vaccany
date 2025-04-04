@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Helper Dashboard</title>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #fafafc, #5f6565, #edefef);
+            color: #0a0202;
+        }
+        
+        .dashboard {
+            padding: 40px;
+            text-align: center;
+        }
+        
+        .jobs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+        
+        .job-card {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .job-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .apply-btn {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            text-decoration: none;
+            margin: 5px;
+        }
+        
+        .apply-btn:hover {
+            background-color: #0056b3;
+        }
+        
+        .live-location {
+            background-color: green;
+        }
+        
+        .rating-container {
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .stars {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        
+        .star {
+            cursor: pointer;
+            color: lightgray;
+        }
+        
+        .star.active {
+            color: gold;
+        }
+        
+        textarea {
+            width: 100%;
+            padding: 8px;
+            margin-top: 10px;
+            border-radius: 5px;
+            resize: vertical;
+        }
+    </style>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
+</head>
+
+<body>
+    <div class="dashboard">
+        <h2>Available Helpers</h2>
+        <p>Explore trusted helpers around you</p>
+        <input type="text" id="searchInput" placeholder="Search for work type (e.g. plumber)" style="padding: 10px; width: 60%; border-radius: 5px; margin-bottom: 20px;">
+        <div class="jobs" id="helperListings"></div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyD3Pozh1DiDghqzpx2yTAYoXkLNHuWMHps",
+            authDomain: "jobposter-11ecd.firebaseapp.com",
+            projectId: "jobposter-11ecd",
+            storageBucket: "jobposter-11ecd.appspot.com",
+            messagingSenderId: "1054867723446",
+            appId: "1:1054867723446:web:d1902de9aeb7b146fc4217",
+            measurementId: "G-LK3WR7EKYB"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const helperListings = document.getElementById('helperListings');
+
+        let allHelpers = [];
+        let userLocation = null;
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                userLocation = {
+                    lat: position.coords.latitude,
+                    lng: position.coords.longitude
+                };
+            },
+            (error) => {
+                console.error("Error getting user location", error);
+            }
+        );
+
+        function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(lat1 * Math.PI / 180) *
+                Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLon / 2) *
+                Math.sin(dLon / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        function toggleRatingSection(contact) {
+            const section = document.getElementById(`rating-container-${contact}`);
+            section.style.display = section.style.display === 'block' ? 'none' : 'block';
+        }
+
+        function submitRating(helperId) {
+            const selected = document.querySelector(`.rate-stars[data-helper-id="${helperId}"]`).getAttribute("data-selected");
+            const ratingValue = parseInt(selected);
+            const description = document.getElementById(`desc-${helperId}`).value;
+
+            if (!ratingValue || !description.trim()) {
+                alert("Please provide both rating and feedback.");
+                return;
+            }
+
+            db.collection("helper_ratings").add({
+                helperId,
+                rating: ratingValue,
+                description,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => {
+                alert("Thank you for your rating!");
+                document.getElementById(`desc-${helperId}`).value = '';
+                toggleRatingSection(helperId);
+                fetchHelpers(); // refresh average
+            }).catch(err => {
+                console.error("Rating submit error:", err);
+                alert("Failed to submit rating.");
+            });
+        }
+
+        function initializeRatings() {
+            document.querySelectorAll(".rate-stars").forEach(starsContainer => {
+                const helperId = starsContainer.getAttribute("data-helper-id");
+                const stars = starsContainer.querySelectorAll(".star");
+
+                stars.forEach(star => {
+                    star.addEventListener("click", function() {
+                        const ratingValue = parseInt(this.getAttribute("data-value"));
+                        stars.forEach(s => s.classList.remove("active"));
+                        for (let i = 0; i < ratingValue; i++) {
+                            stars[i].classList.add("active");
+                        }
+                        starsContainer.setAttribute("data-selected", ratingValue);
+                    });
+                });
+            });
+        }
+
+        function fetchHelpers() {
+            db.collection("helpers").get().then(snapshot => {
+                const helpers = snapshot.docs.map(doc => doc.data());
+
+                db.collection("helper_ratings").get().then(ratingSnap => {
+                    const ratings = {};
+                    ratingSnap.docs.forEach(doc => {
+                        const data = doc.data();
+                        if (!ratings[data.helperId]) ratings[data.helperId] = [];
+                        ratings[data.helperId].push(data.rating);
+                    });
+
+                    helpers.forEach(helper => {
+                        const rList = ratings[helper.contact] || [];
+                        const average = rList.length > 0 ?
+                            rList.reduce((a, b) => a + b) / rList.length :
+                            0;
+                        helper.averageRating = Math.round(average);
+                    });
+
+                    allHelpers = helpers; // store all helpers
+                    displayHelpers(helpers);
+                });
+            }).catch(error => {
+                console.error("Error fetching helpers:", error);
+                helperListings.innerHTML = '<p>Error loading helpers.</p>';
+            });
+        }
+
+        function displayHelpers(helperList) {
+            helperListings.innerHTML = '';
+            if (helperList.length === 0) {
+                helperListings.innerHTML = '<p>No helpers found at the moment.</p>';
+                return;
+            }
+
+            helperList.forEach(helper => {
+                        const helperCard = document.createElement('div');
+                        helperCard.classList.add('job-card');
+
+                        let preFilledStars = '';
+                        for (let i = 1; i <= 5; i++) {
+                            preFilledStars += `<span class="star ${i <= helper.averageRating ? 'active' : ''}">&#9733;</span>`;
+                        }
+
+                        helperCard.innerHTML = `
+          <h4>${helper.name || 'Unnamed'}</h4>
+          <p><strong>Contact:</strong> ${helper.contact || 'N/A'}</p>
+          <p><strong>Email:</strong> ${helper.email || 'N/A'}</p>
+          <p><strong>Work Type:</strong> ${helper.workType || 'N/A'}</p>
+          <p><strong>Experience:</strong> ${helper.experience || '0'} years</p>
+          <p><strong>Location:</strong> ${helper.location || 'Not provided'}</p>
+
+          <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <a href="mailto:${helper.email || ''}">
+              <button class="apply-btn">Contact</button>
+            </a>
+            ${helper.location ? `
+              <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(helper.location)}" target="_blank">
+                <button class="apply-btn" style="background-color: #28a745;">Location</button>
+              </a>` : ''}
+          </div>
+
+          <div style="margin-top: 15px; text-align: center;">
+            <p><strong>Scan to Pay</strong></p>
+            <img src="qrcode.png" alt="QR Code" style="width: 150px; height: 150px; object-fit: contain; border: 1px solid #ccc; border-radius: 10px;" />
+          </div>
+
+          <div style="margin-top: 15px;">
+            <p><strong>Average Rating:</strong></p>
+            <div class="stars">${preFilledStars}</div>
+            <button class="apply-btn" onclick="toggleRatingSection('${helper.contact}')">Rate Helper</button>
+
+            <div class="rating-container" id="rating-container-${helper.contact}">
+              <p><strong>Rate this Helper:</strong></p>
+              <div class="stars rate-stars" data-helper-id="${helper.contact}" data-selected="0">
+                <span class="star" data-value="1">&#9733;</span>
+                <span class="star" data-value="2">&#9733;</span>
+                <span class="star" data-value="3">&#9733;</span>
+                <span class="star" data-value="4">&#9733;</span>
+                <span class="star" data-value="5">&#9733;</span>
+              </div>
+              <textarea id="desc-${helper.contact}" placeholder="Write your feedback..."></textarea>
+              <button class="apply-btn" onclick="submitRating('${helper.contact}')">Submit Rating</button>
+              <a href="rating.html?helperId=${helper.contact}">
+                <button class="apply-btn">Rate Helper</button>
+              </a>
+            </div>
+          </div>
+        `;
+
+        if (helper.contact) {
+          db.collection("liveLocations").doc(helper.contact).onSnapshot((doc) => {
+            if (doc.exists) {
+              const { lat, lng } = doc.data();
+              const mapUrl = `https://www.google.com/maps?q=${lat},${lng}`;
+              const locationBtn = document.createElement('a');
+              locationBtn.href = mapUrl;
+              locationBtn.target = "_blank";
+              locationBtn.innerHTML = '<button class="apply-btn live-location">Live Location</button>';
+              helperCard.querySelector('div').appendChild(locationBtn);
+            }
+          });
+        }
+
+        helperListings.appendChild(helperCard);
+      });
+
+      initializeRatings();
+    }
+
+    // 🔍 Work Type Search
+    document.getElementById("searchInput").addEventListener("input", function (e) {
+      const query = e.target.value.toLowerCase();
+      const filteredHelpers = allHelpers.filter(helper =>
+        helper.workType && helper.workType.toLowerCase().includes(query)
+      );
+      displayHelpers(filteredHelpers);
+    });
+
+    fetchHelpers();
+    </script>
+</body>
+
+</html>
