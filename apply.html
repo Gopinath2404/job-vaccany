@@ -118,7 +118,7 @@
         
         button:hover {
             transform: translateY(-5px);
-            box-shadow: 0 6px 15px rgba(238, 17, 17, 0.938);
+            box-shadow: 0 6px 15px rgba(62, 175, 77, 0.938);
         }
         
         select {
@@ -148,14 +148,18 @@
 
             <label for="company">Company Name:</label>
             <input type="text" id="company" name="company" required>
-            <label for="name">Full Name:</label>
-            <input type="text" id="name" name="name" required>
 
-            <label for="email">Email:</label>
+            <label for="fullName">Full Name:</label>
+            <input type="text" id="fullName" name="fullName" required>
+
+            <label for="email">Email ID:</label>
             <input type="email" id="email" name="email" required>
 
-            <label for="phone">Phone Number:</label>
-            <input type="tel" id="phone" name="phone" required>
+            <label for="contactNumber">Contact Number:</label>
+            <input type="tel" id="contactNumber" name="contactNumber" required>
+
+            <label for="location">Location:</label>
+            <input type="text" id="location" name="location" required>
 
             <label for="resume">Upload Resume:</label>
             <div class="file-input-wrapper">
@@ -187,21 +191,34 @@
             e.preventDefault();
 
             const company = document.getElementById('company').value;
-            const name = document.getElementById('name').value;
+            const fullName = document.getElementById('fullName').value;
             const email = document.getElementById('email').value;
-            const phone = document.getElementById('phone').value;
+            const contactNumber = document.getElementById('contactNumber').value;
+            const location = document.getElementById('location').value;
             const resume = document.getElementById('resume').files[0];
+
+            if (!resume) {
+                alert('Please upload your resume.');
+                return;
+            }
 
             const resumeFileName = resume.name;
 
-            database.ref('jobApplications/').push({
-                company: company,
-                name: name,
+            // Store data under the specific company name
+            database.ref(`jobApplications/${company}/`).push({
+                fullName: fullName,
                 email: email,
-                phone: phone,
+                contactNumber: contactNumber,
+                location: location,
                 resumeFileName: resumeFileName,
                 timestamp: firebase.database.ServerValue.TIMESTAMP
+                    // In your original form's submit event listener (.then() block):
             }).then(() => {
+                alert('Registration successful!');
+                const company = document.getElementById('company').value;
+                window.location.href = `dispaly.html?company=${encodeURIComponent(company)}`;
+            }).catch((error) => {
+                console.error("Error saving data:", error);
                 alert('Registration failed. Please try again.');
             });
         });
